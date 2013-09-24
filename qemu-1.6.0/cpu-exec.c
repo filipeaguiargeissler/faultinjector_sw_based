@@ -678,8 +678,7 @@ int cpu_exec(CPUArchState *env)
                 /* reset soft MMU for next block (it can currently
                    only be set by a memory fault) */
 #ifdef FAULT_INJECTION_API
-		if (fault_injection_module_is_time_simul_expired())
-			fault_injection_module_set_bitflip();
+		fault_injection_module_time_based_trigger();
 #endif
             } /* for(;;) */
         } else {
@@ -688,11 +687,6 @@ int cpu_exec(CPUArchState *env)
             cpu = current_cpu;
             env = cpu->env_ptr;
         }
-#ifdef FAULT_INJECTION_API
-		if (fault_injection_module_is_time_simul_expired())
-			fault_injection_module_set_bitflip();
-#endif
-
     } /* for(;;) */
 
 

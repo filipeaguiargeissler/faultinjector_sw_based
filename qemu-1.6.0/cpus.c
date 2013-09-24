@@ -1097,87 +1097,33 @@ static void qemu_dummy_start_vcpu(CPUState *cpu)
 
 #ifdef FAULT_INJECTION_API
 
-#define FAULT_STIMULI_FILE   "/home/filipe/Mestrado/stimuli.txt"
+#include "fault_injection_module.h"
 
-// Simulation Mode
-enum {
-	FAULT_INJECTION_MODULE_WITHOUT_FAULT,
-	FAULT_INJECTION_MODULE_WITH_FAULT,
-};
+struct faultInjectionModule faultInjectionModuleMgr;
+struct faultInjectionModule *pFm = &faultInjectionModuleMgr;
 
-enum {
-	FAULT_INJECTION_MODULE_DEBUG_OFF,
-	FAULT_INJECTION_MODULE_DEBUG_ON,
-};
-
-// Mode
-enum {
-	FAULT_INJECTION_MODULE_MEM_CELL_ARRAY,
-	FAULT_INJECTION_MODULE_DECODER
-}
-
-// Mem Fault Type 
-enum {
-	FAULT_INJECTION_MODULE_STUCK_AT_FAULT,	
-	FAULT_INJECTION_MODULE_BITFLIP_FAULT,
-	FAULT_INJECTION_MODULE_COUPLING_FAULT,
-};
-
-// Decoder Fault type
-enum {
-	FAULT_INJECTION_MODULE_FAILURE_TO_ACCESS_CELL,
-	FAULT_INJECTION_MODULE_WRONG_ACCESS_CELL,
-	FAULT_INJECTION_MODULE_ACCESS_MANY_CELLS_FOR_ONE_ADDRESS,
-	FAULT_INJECTION_MODULE_ACCESS_MANY_ADDRS_FOR_SAME_CELL,
-};
-
-// Trigger
-enum {
-	FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER,
-	FAULT_INJECTION_MODULE_ACCESS_BASED_TRIGGER
-}
-
-// Fault type
-enum {
-	FAULT_INJECTION_MODULE_TRANSIENT,
-	FAULT_INJECTION_MODULE_PERMANENT,
-	FAULT_INJECTION_MODULE_INTERMITTENT,
-}
-
-struct faultInjectionModuleStimule {
-	int mode;
-	int mem_fault_type;
-	int decoder_fault_type;
-	int trigger;
-	int fault_type;
-
-	int bit_pos;
-	unsigned long start;
-	unsigned long end;
-};
-
-struct faultInjectionStatistics {
-};
-
-struct faultInjectionModule {
-	// Fault injection mode
-	int mode;
-	// Configure debug mode
-	int debug;
-
-	// when this time is reach the system is restarted
-	unsigned long totalTimeSimul; 
-	// depends on the number of stimuli in the file
-	int totalFault;
-	struct faultInjectionModuleStimule *list;
-
-	struct faultInjectionStatistics stats;
-}faultInjectionModuleMrg;
-
-void __fault_injection_module_init(void)
+int fault_injection_module_init(void)
 {
-	faultInjectionModuleMrg.mode = FAULT_INJECTION_MODULE_WITHOUT_FAULT;
-	faultInjectionModuleMrg.debug = FAULT_INJECTION_MODULE_DEBUG_OFF;
+	memset(pFm, 0, sizeof(faultInjectionModuleMgr);
+
+	pFm->mode = FAULT_INJECTION_MODULE_GOLDEN_EXECUTION;
+	pFm->debug = FAULT_INJECTION_MODULE_DEBUG_ON;
+
+	fd = open(FAULT_STIMULI_FILE, O_RDONLY);
+	if (fd == -1)
+		return -1;
+
+	read(fd, &pfm->simultotalTime, sizeof(unsigned long));
+	read(fd, &pfm->goldenMemInit, sizeof(unsigned long));
+	read(fd, &pfm->goldenMemEnd, sizeof(unsigned long));
+
+	while (read(fd, &pFm->list[i], sizeof(struct faultInjectionModuleStimule)) 
+		> 0)
+		pFm->stimuliTotal++;
+
+	close(fd);
+	
+	return 0;
 }
 
 void __fault_injection_module_dump_mem(void)
@@ -1192,30 +1138,153 @@ void __fault_injection_module_statistics(void)
 
 }
 
-int fault_injection_module_is_time_simul_expired(void)
+void __fault_injection_module_golden_simul(void)
 {
-	if (cpu_get_ticks() >= totalTimeSimul) {
-			// - generate dump file
-			// - reboot the system
-			cpu_reset_ticks();
-			qmp_system_reset(NULL);
-			return 0;
-	}
-	return 1;
+	pFm->mode = FAULT_INJECTION_MODULE_WITH_FAULT;
+
+	
 }
 
-int fault_injection_module_set_bitflip()
+void __fault_injection_module_bitflip(int64_t timeTick)
 {
-	// faguiar@parks insert error
-	if (cpu_get_ticks() > 1409982748 && cpu_get_ticks() < 1509982748) {
-		uint8_t buf[4];
+	uint8_t buf[4]; // 32 bit processor
 
-		buf[0] = 0xab;
-		buf[1] = 0xab;
-		buf[2] = 0xab;
-		buf[3] = 0xab;
-		cpu_physical_memory_rw(0x10000, buf, 4, 1);
+	if (pFm->list[pFm->idx].mem_fault_type != 
+			FAULT_INJECTION_MODULE_BITFLIP_FAULT)
+		return -1;
+
+	if (pFm->list[pFm->idx].done)
+		return 0;
+
+	cpu_physical_memory_rw(pFm->list[pFm->idx].addr, buf, 4, 0);
+	// xor operation to simulate bitflip
+	buf[pFm->list[pFm->idx].bit_pos/4] ^= 
+		1 << (pFm->list[pFm->idx].bit_pos % 8); 
+
+	cpu_physical_memory_rw(pFm->list[pFm->idx].addr, buf, 4, 1);
+
+	return 0;
+}
+
+int __fault_injection_module_mem_array(uint64_t addr, uint8_t *val, int is_write)
+{
+	uint8_t buf[4]; // 32 bit processor
+	int64_t timeTick;
+	int isTimeBased = 0;
+
+	// Check address
+	if (pFm->list[pFm->idx].addr != addr)
+		return -1;
+
+	if (pFm->list[pFm->idx].trigger == 
+			FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER) {
+		isTimeBased = 1;
+		timeTick = cpu_get_ticks();
 	}
+
+	// Time based decision
+	if (isTimeBased && (pFm->list[pFm->idx].start > timeTick ||
+				pFm->list[pFm->idx].end < timeTick))
+		return 0;
+
+	switch (pFm->list[pFm->idx].mem_fault_type) {
+	case FAULT_INJECTION_MODULE_STUCK_AT_FAULT:
+		cpu_physical_memory_rw(addr, buf, 4, 0);
+		// stack-at-one
+		if (pFm->list[pFm->idx].bit_val)
+			buf[pFm->list[pFm->idx].bit_pos/4] |= 
+				1 << (pFm->list[pFm->idx].bit_pos % 8); 
+		// stack-at-zero
+		else
+			buf[pFm->list[pFm->idx].bit_pos/4] &= 
+				~(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
+		cpu_physical_memory_rw(addr, buf, 4, 1);
+		break;
+
+	case FAULT_INJECTION_MODULE_COUPLING_FAULT:
+		if (is_write) {
+			cpu_physical_memory_rw(addr, val, 4, 1);
+			cpu_physical_memory_rw(addr+1, val, 4, 1);
+		}
+		break;
+	}
+
+	return 0;
+}
+
+int __fault_injection_module_decoder(uint64_t addr, uint8_t *val, int is_write)
+{
+	switch (pFm->list[pFm->idx].decoder_fault_type) {
+	case  FAULT_INJECTION_MODULE_FAILURE_TO_ACCESS_CELL:
+		break;
+
+	case FAULT_INJECTION_MODULE_WRONG_ACCESS_CELL:
+		break;
+	case FAULT_INJECTION_MODULE_ACCESS_MANY_CELLS_FOR_ONE_ADDRESS:
+		break;
+
+	case FAULT_INJECTION_MODULE_ACCESS_MANY_ADDRS_FOR_SAME_CELL:
+		break;
+	}
+
+
+	return 0;
+}
+
+
+int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, int is_write)
+{
+	// No faults are injected in Golden mode
+	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
+		return 0;
+
+	if (pFm->list[pFm->idx].mode == 
+			FAULT_INJECTION_MODULE_MEM_CELL_ARRAY)
+		__fault_injection_module_mem_array(addr, val, is_write);
+	else
+		__fault_injection_module_decoder(addr, val, is_write);
+
+	return 0;
+}
+
+int fault_injection_module_time_based_trigger(void)
+{
+	int64_t timeTick = cpu_get_ticks();
+
+	// Simulation total time reached
+	if (pFm->simultotalTime >= timeTick) {
+		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT)
+			__fault_injection_module_statistics();
+		else
+			__fault_injection_module_golden_simul();
+		
+		// Prepare the system for a new simulation
+		pFm->idx++;
+		if (pFm->idx == pFm->stimuliTotal)
+			fault_injector_module_export_results();
+
+		cpu_reset_ticks();
+		qmp_system_reset(NULL);
+		return 0;
+	}
+
+	// No faults are injected in Golden mode
+	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
+		return 0;
+
+	// Verify trigger type
+	if (pFm->list[pFm->idx].trigger != 
+		FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER)
+		return 0;
+
+	switch (pFm->list[pFm->idx].mode) {
+	case FAULT_INJECTION_MODULE_MEM_CELL_ARRAY:
+		__fault_injection_module_bitflip(timeTick);
+		break;
+	// todo	
+	}
+
+	return 0;
 }
 
 #endif
@@ -1227,7 +1296,7 @@ void qemu_init_vcpu(CPUState *cpu)
     cpu->stopped = true;
 
 #ifdef FAULT_INJECTION_API
-	__fault_injection_module_init();
+    fault_injection_module_init();
 #endif
 
     if (kvm_enabled()) {

@@ -19,7 +19,7 @@ enum {
 // Mode
 enum {
 	FAULT_INJECTION_MODULE_MEM_CELL_ARRAY,
-	FAULT_INJECTION_MODULE_DECODER
+	FAULT_INJECTION_MODULE_DECODER,
 }
 
 // Mem Fault Type 
@@ -40,7 +40,7 @@ enum {
 // Trigger
 enum {
 	FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER,
-	FAULT_INJECTION_MODULE_ACCESS_BASED_TRIGGER
+	FAULT_INJECTION_MODULE_ACCESS_BASED_TRIGGER,
 }
 
 // Fault type
@@ -62,6 +62,8 @@ struct faultInjectionModuleStimule {
 	int bit_val;
 	int64_t start;
 	int64_t end;
+
+	int done;
 };
 
 struct faultInjectionStatistics {

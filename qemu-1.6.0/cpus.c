@@ -1122,27 +1122,61 @@ int fault_injection_module_init(void)
 		pFm->stimuliTotal++;
 
 	close(fd);
+
+	// Pre-allocate buffers
+	pFm->goldenMemLen = pFm->goldenMemEnd - pFm->goldenMemInit;
+
+	pFm->goldenMemDump = malloc(pFm->goldenMemLen * sizeof(uint32_t));
+	if (!pFm->goldenMemDump)
+		syslog(0, "no memory available");
+
+	pFm->stats.pMemDump = malloc(pFm->goldenMemLen * sizeof(uint32_t));
+	if (!pFm->stats.pMemDump)
+		syslog(0, "no memory available");
 	
 	return 0;
 }
 
-void __fault_injection_module_dump_mem(void)
+int __fault_injection_module_statistics(void)
 {
+	uint8_t *pMemDump;
+	
+	pMemDump = pFm->stats.pMemDump;
 
+	for (i = 0; i < pFm->goldenMemLen; i++) {
+		cpu_physical_memory_rw(pFm->goldenMemInit + i, pMemDump, 4, 0);
+		pMemDump += 4;
+	}
+
+	if (memcpm(pFm->stats.pMemDump, pFm->goldenMemDump, 
+			pFm->goldenMemLen * (sizeof(uint32_t))))
+		pFm->stats.dataflow_err++;
+
+	return 0;
 }
 
-
-void __fault_injection_module_statistics(void)
+void __fault_injector_module_export_results(void)
 {
+	// compute results
 
-
+	exit(EXIT_SUCCESS);
 }
 
-void __fault_injection_module_golden_simul(void)
+int __fault_injection_module_golden_simul(void)
 {
+	uint8_t *pMemDump;
+	
+	pMemDump = pFm->goldenMemDump;
+
+	for (i = 0; i < len; i++) {
+		cpu_physical_memory_rw(goldenMemInit + i, pMemDump, 4, 0);
+		pMemDump += 4;
+	}
+
+	// exit from golden mode
 	pFm->mode = FAULT_INJECTION_MODULE_WITH_FAULT;
 
-	
+	return 0;	
 }
 
 void __fault_injection_module_bitflip(int64_t timeTick)
@@ -1249,19 +1283,20 @@ int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, int is
 
 int fault_injection_module_time_based_trigger(void)
 {
+	int ret;
 	int64_t timeTick = cpu_get_ticks();
 
 	// Simulation total time reached
 	if (pFm->simultotalTime >= timeTick) {
 		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT)
-			__fault_injection_module_statistics();
+			ret = __fault_injection_module_statistics();
 		else
-			__fault_injection_module_golden_simul();
-		
+			ret = __fault_injection_module_golden_simul();
+			
 		// Prepare the system for a new simulation
 		pFm->idx++;
 		if (pFm->idx == pFm->stimuliTotal)
-			fault_injector_module_export_results();
+			__fault_injector_module_export_results();
 
 		cpu_reset_ticks();
 		qmp_system_reset(NULL);

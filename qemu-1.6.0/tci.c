@@ -28,6 +28,8 @@
 #include "exec/exec-all.h"           /* MAX_OPC_PARAM_IARGS */
 #include "tcg-op.h"
 
+#include "fault_injection_module.h"
+
 /* Marker for missing code. */
 #define TODO() \
     do { \
@@ -1235,6 +1237,10 @@ tcg_target_ulong tcg_qemu_tb_exec(CPUArchState *env, uint8_t *tb_ptr)
             break;
         }
         assert(tb_ptr == old_code_ptr + op_size);
+
+#ifdef FAULT_INJECTION_API
+		fault_injection_module_time_based_trigger();
+#endif
     }
 exit:
     return next_tb;

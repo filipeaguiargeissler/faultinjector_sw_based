@@ -67,6 +67,7 @@ struct faultInjectionModuleStimule {
 };
 
 struct faultInjectionStatistics {
+	uint8_t *pMemDump;
 	unsigned long dataflow_err;
 	unsigned long datapath_err;
 };
@@ -84,10 +85,11 @@ struct faultInjectionModule {
 	// The first simulation is to do a golden execution
 	uint64_t goldenMemInit;
 	uint64_t goldenMemEnd;
+	uint32_t goldenMemLen;
 	
 	// Allocated memory with golden execution result
 	// i386 arch
-	unsigned int *goldenMemDump;
+	uint8_t *goldenMemDump;
 	
 	// Depends on the number of stimuli in the input file
 	int stimuliTotal;

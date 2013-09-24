@@ -677,9 +677,7 @@ int cpu_exec(CPUArchState *env)
                 cpu->current_tb = NULL;
                 /* reset soft MMU for next block (it can currently
                    only be set by a memory fault) */
-#ifdef FAULT_INJECTION_API
-		fault_injection_module_time_based_trigger();
-#endif
+
             } /* for(;;) */
         } else {
             /* Reload env after longjmp - the compiler may have smashed all

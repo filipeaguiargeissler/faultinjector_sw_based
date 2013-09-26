@@ -1173,7 +1173,7 @@ int __fault_injection_module_golden_simul(void)
 		pMemDump += 4;
 	}
 
-	// exit from golden mode
+	// exit from golden test mode
 	pFm->mode = FAULT_INJECTION_MODULE_WITH_FAULT;
 
 	return 0;	
@@ -1202,7 +1202,6 @@ void __fault_injection_module_bitflip(int64_t timeTick)
 
 int __fault_injection_module_mem_array(uint64_t addr, uint8_t *val, int is_write)
 {
-	uint8_t buf[4]; // 32 bit processor
 	int64_t timeTick;
 	int isTimeBased = 0;
 
@@ -1219,20 +1218,24 @@ int __fault_injection_module_mem_array(uint64_t addr, uint8_t *val, int is_write
 	// Time based decision
 	if (isTimeBased && (pFm->list[pFm->idx].start > timeTick ||
 				pFm->list[pFm->idx].end < timeTick))
-		return 0;
+		return -1;
 
 	switch (pFm->list[pFm->idx].mem_fault_type) {
 	case FAULT_INJECTION_MODULE_STUCK_AT_FAULT:
-		cpu_physical_memory_rw(addr, buf, 4, 0);
+
+		if (!is_write)
+			cpu_physical_memory_rw(addr, val, 4, 0);
+
 		// stack-at-one
 		if (pFm->list[pFm->idx].bit_val)
-			buf[pFm->list[pFm->idx].bit_pos/4] |= 
+			val[pFm->list[pFm->idx].bit_pos/4] |= 
 				1 << (pFm->list[pFm->idx].bit_pos % 8); 
 		// stack-at-zero
 		else
-			buf[pFm->list[pFm->idx].bit_pos/4] &= 
+			val[pFm->list[pFm->idx].bit_pos/4] &= 
 				~(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
-		cpu_physical_memory_rw(addr, buf, 4, 1);
+		if (is_write)
+			cpu_physical_memory_rw(addr, val, 4, 1);
 		break;
 
 	case FAULT_INJECTION_MODULE_COUPLING_FAULT:
@@ -1248,6 +1251,10 @@ int __fault_injection_module_mem_array(uint64_t addr, uint8_t *val, int is_write
 
 int __fault_injection_module_decoder(uint64_t addr, uint8_t *val, int is_write)
 {
+	// Check address
+	if (pFm->list[pFm->idx].addr != addr)
+		return -1;
+
 	switch (pFm->list[pFm->idx].decoder_fault_type) {
 	case  FAULT_INJECTION_MODULE_FAILURE_TO_ACCESS_CELL:
 		break;
@@ -1268,17 +1275,19 @@ int __fault_injection_module_decoder(uint64_t addr, uint8_t *val, int is_write)
 
 int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, int is_write)
 {
-	// No faults are injected in Golden mode
+	int ret;
+
+	// No faults are injected in Golden test mode
 	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
-		return 0;
+		return -1;
 
 	if (pFm->list[pFm->idx].mode == 
 			FAULT_INJECTION_MODULE_MEM_CELL_ARRAY)
-		__fault_injection_module_mem_array(addr, val, is_write);
+		ret = __fault_injection_module_mem_array(addr, val, is_write);
 	else
-		__fault_injection_module_decoder(addr, val, is_write);
+		ret = __fault_injection_module_decoder(addr, val, is_write);
 
-	return 0;
+	return ret;
 }
 
 int fault_injection_module_time_based_trigger(void)
@@ -1303,7 +1312,7 @@ int fault_injection_module_time_based_trigger(void)
 		return 0;
 	}
 
-	// No faults are injected in Golden mode
+	// No faults are injected in Golden test mode
 	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
 		return 0;
 

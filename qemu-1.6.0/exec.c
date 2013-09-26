@@ -51,6 +51,8 @@
 
 #include "exec/memory-internal.h"
 
+#include "fault_injection_module.h"
+
 //#define DEBUG_SUBPAGE
 
 #if !defined(CONFIG_USER_ONLY)
@@ -1334,6 +1336,7 @@ found:
    It should not be used for general purpose DMA.
    Use cpu_physical_memory_map/cpu_physical_memory_rw instead.
  */
+// faguiar@parks
 void *qemu_get_ram_ptr(ram_addr_t addr)
 {
     RAMBlock *block = qemu_get_ram_block(addr);
@@ -1631,6 +1634,7 @@ static bool subpage_accepts(void *opaque, hwaddr addr,
                                       size, is_write);
 }
 
+// faguiar@parks
 static const MemoryRegionOps subpage_ops = {
     .read = subpage_read,
     .write = subpage_write,
@@ -1695,6 +1699,7 @@ MemoryRegion *iotlb_to_region(hwaddr index)
     return address_space_memory.dispatch->sections[index & ~TARGET_PAGE_MASK].mr;
 }
 
+// faguiar@parks
 static void io_mem_init(void)
 {
     memory_region_init_io(&io_mem_rom, NULL, &unassigned_mem_ops, NULL, "rom", UINT64_MAX);
@@ -2025,6 +2030,7 @@ bool address_space_rw(AddressSpace *as, hwaddr addr, uint8_t *buf,
     return error;
 }
 
+// verificar se este é o acesso a memoria ram
 bool address_space_write(AddressSpace *as, hwaddr addr,
                          const uint8_t *buf, int len)
 {
@@ -2287,6 +2293,14 @@ static inline uint32_t ldl_phys_internal(hwaddr addr,
         ptr = qemu_get_ram_ptr((memory_region_get_ram_addr(mr)
                                 & TARGET_PAGE_MASK)
                                + addr1);
+
+#ifdef FAULT_INJECTION_API
+	// faguiar@parks
+	if (fault_injection_module_check_and_trigger(addr1, 
+		&val, 0) != -1)
+		return val;
+#endif
+
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:
             val = ldl_le_p(ptr);
@@ -2346,6 +2360,14 @@ static inline uint64_t ldq_phys_internal(hwaddr addr,
         ptr = qemu_get_ram_ptr((memory_region_get_ram_addr(mr)
                                 & TARGET_PAGE_MASK)
                                + addr1);
+
+#ifdef FAULT_INJECTION_API
+	// faguiar@parks
+	if (fault_injection_module_check_and_trigger(addr1, 
+		&val, 0) != -1)
+		return val;
+#endif
+
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:
             val = ldq_le_p(ptr);
@@ -2409,10 +2431,19 @@ static inline uint32_t lduw_phys_internal(hwaddr addr,
         }
 #endif
     } else {
+	// faguiar@parks
         /* RAM case */
         ptr = qemu_get_ram_ptr((memory_region_get_ram_addr(mr)
                                 & TARGET_PAGE_MASK)
                                + addr1);
+
+#ifdef FAULT_INJECTION_API
+	// faguiar@parks
+	if (fault_injection_module_check_and_trigger(addr1, 
+		&val, 0) != -1)
+		return val;
+#endif
+
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:
             val = lduw_le_p(ptr);
@@ -2459,6 +2490,12 @@ void stl_phys_notdirty(hwaddr addr, uint32_t val)
         io_mem_write(mr, addr1, val, 4);
     } else {
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
+#ifdef FAULT_INJECTION_API
+	// faguiar@parks
+	if (fault_injection_module_check_and_trigger(addr1, 
+		&val, 1) != -1)
+		return;
+#endif
         ptr = qemu_get_ram_ptr(addr1);
         stl_p(ptr, val);
 
@@ -2499,6 +2536,14 @@ static inline void stl_phys_internal(hwaddr addr, uint32_t val,
     } else {
         /* RAM case */
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
+
+#ifdef FAULT_INJECTION_API
+	// faguiar@parks
+	if (fault_injection_module_check_and_trigger(addr1, 
+		&val, 1) != -1)
+		return;
+#endif
+
         ptr = qemu_get_ram_ptr(addr1);
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:
@@ -2562,6 +2607,14 @@ static inline void stw_phys_internal(hwaddr addr, uint32_t val,
     } else {
         /* RAM case */
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
+
+#ifdef FAULT_INJECTION_API
+	// faguiar@parks
+	if (fault_injection_module_check_and_trigger(addr1, 
+		&val, 1) != -1)
+		return;
+#endif
+
         ptr = qemu_get_ram_ptr(addr1);
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:

@@ -1,7 +1,15 @@
 #ifndef __FAULT_INJECTION_MODULE_H__
 #define __FAULT_INJECTION_MODULE_H__
 
+#include <unistd.h>
+#include <syslog.h>
+
+// enable fault injector module
+#define FAULT_INJECTION_API  1
+
 #define FAULT_STIMULI_FILE   "/home/filipe/mestrado/stimuli.txt"
+
+#define FAULT_REPORTS_FILE   "/home/filipe/mestrado/simul_reports.txt"
 
 #define FAULT_INJECTION_MAX  (10000)
 
@@ -20,7 +28,7 @@ enum {
 enum {
 	FAULT_INJECTION_MODULE_MEM_CELL_ARRAY,
 	FAULT_INJECTION_MODULE_DECODER,
-}
+};
 
 // Mem Fault Type 
 enum {
@@ -41,14 +49,14 @@ enum {
 enum {
 	FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER,
 	FAULT_INJECTION_MODULE_ACCESS_BASED_TRIGGER,
-}
+};
 
 // Fault type
 enum {
 	FAULT_INJECTION_MODULE_TRANSIENT,
 	FAULT_INJECTION_MODULE_PERMANENT,
 	FAULT_INJECTION_MODULE_INTERMITTENT,
-}
+};
 
 struct faultInjectionModuleStimule {
 	int mode;
@@ -98,6 +106,13 @@ struct faultInjectionModule {
 
 	struct faultInjectionStatistics stats;
 };
+
+
+int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, 
+		int is_write);
+
+
+int fault_injection_module_time_based_trigger(void);
 
 #endif
 

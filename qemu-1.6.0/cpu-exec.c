@@ -23,6 +23,8 @@
 #include "qemu/atomic.h"
 #include "sysemu/qtest.h"
 
+#include "fault_injection_module.h"
+
 bool qemu_cpu_has_work(CPUState *cpu)
 {
     return cpu_has_work(cpu);
@@ -194,8 +196,6 @@ static void cpu_handle_debug_exception(CPUArchState *env)
         debug_excp_handler(env);
     }
 }
-
-static int resetar = 0;
 
 /* main execution loop */
 
@@ -685,6 +685,9 @@ int cpu_exec(CPUArchState *env)
             cpu = current_cpu;
             env = cpu->env_ptr;
         }
+#ifdef FAULT_INJECTION_API
+		fault_injection_module_time_based_trigger();
+#endif
     } /* for(;;) */
 
 

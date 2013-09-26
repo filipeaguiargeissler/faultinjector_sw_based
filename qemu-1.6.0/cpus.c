@@ -23,6 +23,7 @@
  */
 
 /* Needed early for CONFIG_BSD etc. */
+
 #include "config-host.h"
 
 #include "monitor/monitor.h"
@@ -41,6 +42,8 @@
 #ifndef _WIN32
 #include "qemu/compatfd.h"
 #endif
+
+#include "fault_injection_module.h"
 
 #ifdef CONFIG_LINUX
 
@@ -1097,14 +1100,17 @@ static void qemu_dummy_start_vcpu(CPUState *cpu)
 
 #ifdef FAULT_INJECTION_API
 
-#include "fault_injection_module.h"
-
 struct faultInjectionModule faultInjectionModuleMgr;
 struct faultInjectionModule *pFm = &faultInjectionModuleMgr;
 
 int fault_injection_module_init(void)
 {
-	memset(pFm, 0, sizeof(faultInjectionModuleMgr);
+	int fd;
+	int ret;
+
+	syslog(0, "%s@%d", __func__, __LINE__);
+
+	memset(pFm, 0, sizeof(faultInjectionModuleMgr));
 
 	pFm->mode = FAULT_INJECTION_MODULE_GOLDEN_EXECUTION;
 	pFm->debug = FAULT_INJECTION_MODULE_DEBUG_ON;
@@ -1113,12 +1119,20 @@ int fault_injection_module_init(void)
 	if (fd == -1)
 		return -1;
 
-	read(fd, &pfm->simultotalTime, sizeof(unsigned long));
-	read(fd, &pfm->goldenMemInit, sizeof(unsigned long));
-	read(fd, &pfm->goldenMemEnd, sizeof(unsigned long));
+	ret = read(fd, &pFm->simultotalTime, sizeof(unsigned long));
+	if (ret == -1)
+		return -1;
 
-	while (read(fd, &pFm->list[i], sizeof(struct faultInjectionModuleStimule)) 
-		> 0)
+	ret = read(fd, &pFm->goldenMemInit, sizeof(unsigned long));
+	if (ret == -1)
+		return -1;
+
+	ret = read(fd, &pFm->goldenMemEnd, sizeof(unsigned long));
+	if (ret == -1)
+		return -1;
+
+	while (read(fd, &pFm->list[pFm->stimuliTotal], 
+			sizeof(struct faultInjectionModuleStimule)) > 0)
 		pFm->stimuliTotal++;
 
 	close(fd);
@@ -1133,12 +1147,15 @@ int fault_injection_module_init(void)
 	pFm->stats.pMemDump = malloc(pFm->goldenMemLen * sizeof(uint32_t));
 	if (!pFm->stats.pMemDump)
 		syslog(0, "no memory available");
+
+	syslog(0, "%s@%d", __func__, __LINE__);
 	
 	return 0;
 }
 
 int __fault_injection_module_statistics(void)
 {
+	int i;
 	uint8_t *pMemDump;
 	
 	pMemDump = pFm->stats.pMemDump;
@@ -1148,8 +1165,8 @@ int __fault_injection_module_statistics(void)
 		pMemDump += 4;
 	}
 
-	if (memcpm(pFm->stats.pMemDump, pFm->goldenMemDump, 
-			pFm->goldenMemLen * (sizeof(uint32_t))))
+	if (memcmp(pFm->stats.pMemDump, pFm->goldenMemDump, 
+			pFm->goldenMemLen * sizeof(uint32_t)))
 		pFm->stats.dataflow_err++;
 
 	return 0;
@@ -1157,19 +1174,31 @@ int __fault_injection_module_statistics(void)
 
 void __fault_injector_module_export_results(void)
 {
-	// compute results
+	FILE *fp;
+	
+	fp = fopen(FAULT_REPORTS_FILE, "w");
+	if (!fp) {
+		syslog(0, "error __fault_injector_module_export_results");
+		return;
+	}
 
+	fprintf(fp, "dataflow_err=%lu\n", pFm->stats.dataflow_err);
+
+	fflush(fp);
+	fclose(fp);
+	
 	exit(EXIT_SUCCESS);
 }
 
 int __fault_injection_module_golden_simul(void)
 {
+	int i;
 	uint8_t *pMemDump;
 	
 	pMemDump = pFm->goldenMemDump;
 
-	for (i = 0; i < len; i++) {
-		cpu_physical_memory_rw(goldenMemInit + i, pMemDump, 4, 0);
+	for (i = 0; i < pFm->goldenMemLen; i++) {
+		cpu_physical_memory_rw(pFm->goldenMemInit + i, pMemDump, 4, 0);
 		pMemDump += 4;
 	}
 
@@ -1179,7 +1208,7 @@ int __fault_injection_module_golden_simul(void)
 	return 0;	
 }
 
-void __fault_injection_module_bitflip(int64_t timeTick)
+int __fault_injection_module_bitflip(int64_t timeTick)
 {
 	uint8_t buf[4]; // 32 bit processor
 
@@ -1272,7 +1301,6 @@ int __fault_injection_module_decoder(uint64_t addr, uint8_t *val, int is_write)
 	return 0;
 }
 
-
 int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, int is_write)
 {
 	int ret;
@@ -1292,8 +1320,10 @@ int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, int is
 
 int fault_injection_module_time_based_trigger(void)
 {
-	int ret;
+	int ret = -1;
 	int64_t timeTick = cpu_get_ticks();
+
+	syslog(0, "%s@%d", __func__, __LINE__);
 
 	// Simulation total time reached
 	if (pFm->simultotalTime >= timeTick) {
@@ -1314,21 +1344,21 @@ int fault_injection_module_time_based_trigger(void)
 
 	// No faults are injected in Golden test mode
 	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
-		return 0;
+		return ret;
 
 	// Verify trigger type
 	if (pFm->list[pFm->idx].trigger != 
 		FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER)
-		return 0;
+		return ret;
 
 	switch (pFm->list[pFm->idx].mode) {
 	case FAULT_INJECTION_MODULE_MEM_CELL_ARRAY:
-		__fault_injection_module_bitflip(timeTick);
+		ret = __fault_injection_module_bitflip(timeTick);
 		break;
-	// todo	
+	// TODO	
 	}
 
-	return 0;
+	return ret;
 }
 
 #endif

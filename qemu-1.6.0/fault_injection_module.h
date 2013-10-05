@@ -2,12 +2,15 @@
 #define __FAULT_INJECTION_MODULE_H__
 
 #include <unistd.h>
+#include <sys/mman.h> /* mmap() is defined in this header */
 #include <syslog.h>
 
 // enable fault injector module
 #define FAULT_INJECTION_API  1
 
 #define FAULT_STIMULI_FILE   "/home/filipe/mestrado/stimuli.txt"
+
+#define FAULT_MEMRESULT_BIN   "/home/filipe/mestrado/memresult.bin"
 
 #define FAULT_REPORTS_FILE   "/home/filipe/mestrado/simul_reports.txt"
 
@@ -94,6 +97,11 @@ struct faultInjectionModule {
 	uint64_t goldenMemInit;
 	uint64_t goldenMemEnd;
 	uint32_t goldenMemLen;
+
+	// Allocated memory with system expected results
+	uint8_t *pResults;	
+	int resultsLen;
+  uint8_t resultsIdxGoldenMem;
 	
 	// Allocated memory with golden execution result
 	// i386 arch

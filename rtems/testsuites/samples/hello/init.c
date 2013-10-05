@@ -34,7 +34,7 @@ rtems_task Init(
   printf( "*** END OF HELLO WORLD TEST ***\n" );
 
   for (i = 0; i < 200; i++)
-	vet[i] = 0xabababab;
+					vet[i] = 0xabababab;
 
   while (1)
 	sleep(1);

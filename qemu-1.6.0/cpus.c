@@ -1103,6 +1103,30 @@ static void qemu_dummy_start_vcpu(CPUState *cpu)
 struct faultInjectionModule faultInjectionModuleMgr;
 struct faultInjectionModule *pFm = &faultInjectionModuleMgr;
 
+uint32_t *__fault_benchmark_result(void)
+{
+	int fdin;
+	char *src;
+	struct stat statbuf;
+
+	/* open the input file */
+	if ((fdin = open(FAULT_MEMRESULT_BIN, O_RDONLY)) < 0)
+		syslog(0, "error1\n");
+
+	/* find size of input file */
+	if (fstat (fdin,&statbuf) < 0)
+		syslog(0, "error 2");
+
+	pFm->resultsLen = statbuf.st_size;
+
+	/* mmap the input file */
+	if ((src = mmap(0, statbuf.st_size, PROT_READ, MAP_SHARED, fdin, 0))
+			== (caddr_t) -1)
+		syslog(0, "error 2");
+
+	return (uint32_t*)src;
+}
+
 int fault_injection_module_init(void)
 {
 	int fd;
@@ -1131,9 +1155,13 @@ int fault_injection_module_init(void)
 	if (ret == -1)
 		return -1;
 
+	syslog(0, "total time=%lu\n", pFm->simultotalTime);
+
 	while (read(fd, &pFm->list[pFm->stimuliTotal], 
 			sizeof(struct faultInjectionModuleStimule)) > 0)
 		pFm->stimuliTotal++;
+
+	syslog(0, "stimuli total=%d", pFm->stimuliTotal);
 
 	close(fd);
 
@@ -1147,6 +1175,8 @@ int fault_injection_module_init(void)
 	pFm->stats.pMemDump = malloc(pFm->goldenMemLen * sizeof(uint32_t));
 	if (!pFm->stats.pMemDump)
 		syslog(0, "no memory available");
+
+	pFm->pResults = __fault_benchmark_result();	
 
 	syslog(0, "%s@%d", __func__, __LINE__);
 	
@@ -1192,15 +1222,42 @@ void __fault_injector_module_export_results(void)
 
 int __fault_injection_module_golden_simul(void)
 {
-	int i;
+	int i, resultsFound = 0;
 	uint8_t *pMemDump;
-	
+
+	syslog(0, "goldenMemLen=%d", pFm->goldenMemLen);
+	syslog(0, "goldenMem=%d,%d", pFm->goldenMemInit, pFm->goldenMemEnd);
+
 	pMemDump = pFm->goldenMemDump;
 
+	// XXX verificar este dump, estah com problema 
 	for (i = 0; i < pFm->goldenMemLen; i++) {
 		cpu_physical_memory_rw(pFm->goldenMemInit + i, pMemDump, 4, 0);
 		pMemDump += 4;
 	}
+
+	syslog(0, "%s@%d resultsLen=%d", __func__, __LINE__, pFm->resultsLen);
+
+	return 0;
+  
+  for (i = 0; ; i++) {
+		if (pFm->goldenMemDump[i] != pFm->pResults[0])
+			continue;
+		syslog(0, "i=%d", i);
+		if (!memcmp(&pFm->goldenMemDump[i], pFm->pResults, pFm->resultsLen)) {
+			resultsFound = 1;
+			break;
+		}
+	}
+	
+	if (!resultsFound) {
+		syslog(0, "Could found the result in the memory");
+		exit(1);
+	}
+	
+	pFm->resultsIdxGoldenMem = i;
+
+	syslog(0, "resultsIdxGoldenMem=%d", pFm->resultsIdxGoldenMem);
 
 	// exit from golden test mode
 	pFm->mode = FAULT_INJECTION_MODULE_WITH_FAULT;
@@ -1327,6 +1384,7 @@ int fault_injection_module_time_based_trigger(void)
 
 	// Simulation total time reached
 	if (pFm->simultotalTime >= timeTick) {
+		syslog(0, "%s@%d", __func__, __LINE__);
 		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT)
 			ret = __fault_injection_module_statistics();
 		else

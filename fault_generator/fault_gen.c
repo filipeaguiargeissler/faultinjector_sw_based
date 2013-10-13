@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
 	memInit = 0x0;
 	write(fd, &memInit, sizeof(memInit));
 
-	memEnd = 0x400000;
+	memEnd = 33554432;
 	write(fd, &memEnd, sizeof(memEnd));
 
 	memset(&fims, 0, sizeof(fims));

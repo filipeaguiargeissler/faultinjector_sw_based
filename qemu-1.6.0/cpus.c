@@ -1224,26 +1224,25 @@ int __fault_injection_module_golden_simul(void)
 {
 	int i, resultsFound = 0;
 	uint8_t *pMemDump;
+	uint64_t addr = 0;
 
 	syslog(0, "goldenMemLen=%d", pFm->goldenMemLen);
 	syslog(0, "goldenMem=%d,%d", pFm->goldenMemInit, pFm->goldenMemEnd);
 
-	pMemDump = pFm->goldenMemDump;
+	pMemDump = &pFm->goldenMemDump[0];
 
 	// XXX verificar este dump, estah com problema 
 	for (i = 0; i < pFm->goldenMemLen; i++) {
-		cpu_physical_memory_rw(pFm->goldenMemInit + i, pMemDump, 4, 0);
+		cpu_physical_memory_rw(pFm->goldenMemInit + addr, pMemDump, 4, 0);
+		addr += 4;
 		pMemDump += 4;
 	}
 
 	syslog(0, "%s@%d resultsLen=%d", __func__, __LINE__, pFm->resultsLen);
 
-	return 0;
-  
-  for (i = 0; ; i++) {
+  for (i = 0; i < pFm->goldenMemLen; i++) {
 		if (pFm->goldenMemDump[i] != pFm->pResults[0])
 			continue;
-		syslog(0, "i=%d", i);
 		if (!memcmp(&pFm->goldenMemDump[i], pFm->pResults, pFm->resultsLen)) {
 			resultsFound = 1;
 			break;
@@ -1251,13 +1250,13 @@ int __fault_injection_module_golden_simul(void)
 	}
 	
 	if (!resultsFound) {
-		syslog(0, "Could found the result in the memory");
+		syslog(0, "An error has occurred - the expected memory result couldn't be found :(");
 		exit(1);
 	}
 	
 	pFm->resultsIdxGoldenMem = i;
 
-	syslog(0, "resultsIdxGoldenMem=%d", pFm->resultsIdxGoldenMem);
+	syslog(0, "Memory index found :D => %d", pFm->resultsIdxGoldenMem);
 
 	// exit from golden test mode
 	pFm->mode = FAULT_INJECTION_MODULE_WITH_FAULT;

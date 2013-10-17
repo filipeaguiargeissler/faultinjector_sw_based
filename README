@@ -1,0 +1,16 @@
+Fault Injetor Software Based (FISBE)
+
+Soft error is a concern for the development of spacial applications. Single Event Effects
+produced by radiation particles in eletronic circuits can produce unpredicable behaviour.
+
+Fault tolerance algorithms have been studied in the literature to increase
+the system reliability. Normally to simulate such conditions and evaluate possible solutions
+the use of dedicated equipments or hardware description simulation are alternatives.
+
+However in project time sometimes there's no available resources to emulate radiation conditions. 
+In addition, the use of hardware description to inject faults and emulate SEE can be limited by the complexity
+of the application. A complex operational system like Linux can increase the simulation time ...
+
+
+
+

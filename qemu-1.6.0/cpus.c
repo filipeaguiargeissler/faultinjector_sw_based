@@ -1132,8 +1132,6 @@ int fault_injection_module_init(void)
 	int fd;
 	int ret;
 
-	syslog(0, "%s@%d", __func__, __LINE__);
-
 	memset(pFm, 0, sizeof(faultInjectionModuleMgr));
 
 	pFm->mode = FAULT_INJECTION_MODULE_GOLDEN_EXECUTION;
@@ -1177,26 +1175,29 @@ int fault_injection_module_init(void)
 		syslog(0, "no memory available");
 
 	pFm->pResults = __fault_benchmark_result();	
-
-	syslog(0, "%s@%d", __func__, __LINE__);
 	
 	return 0;
 }
 
 int __fault_injection_module_statistics(void)
 {
-	int i;
+	int i, pos;
 	uint8_t *pMemDump;
-	
-	pMemDump = pFm->stats.pMemDump;
+	uint64_t addr = 0;
 
+	syslog(0, "%s@%d", __func__, __LINE__);
+	
+	pMemDump = &pFm->stats.pMemDump[0];
 	for (i = 0; i < pFm->goldenMemLen; i++) {
-		cpu_physical_memory_rw(pFm->goldenMemInit + i, pMemDump, 4, 0);
+		cpu_physical_memory_rw(pFm->goldenMemInit + addr, pMemDump, 4, 0);
 		pMemDump += 4;
+		addr += 4;
 	}
 
-	if (memcmp(pFm->stats.pMemDump, pFm->goldenMemDump, 
-			pFm->goldenMemLen * sizeof(uint32_t)))
+	pos = pFm->resultsIdxGoldenMem;
+
+	if (memcmp(&pFm->stats.pMemDump[pos], &pFm->goldenMemDump[pos], 
+													pFm->resultsLen)) 
 		pFm->stats.dataflow_err++;
 
 	return 0;
@@ -1226,21 +1227,17 @@ int __fault_injection_module_golden_simul(void)
 	uint8_t *pMemDump;
 	uint64_t addr = 0;
 
-	syslog(0, "goldenMemLen=%d", pFm->goldenMemLen);
-	syslog(0, "goldenMem=%d,%d", pFm->goldenMemInit, pFm->goldenMemEnd);
+	syslog(0, "Getting Golden Execution Results");
 
 	pMemDump = &pFm->goldenMemDump[0];
-
-	// XXX verificar este dump, estah com problema 
 	for (i = 0; i < pFm->goldenMemLen; i++) {
 		cpu_physical_memory_rw(pFm->goldenMemInit + addr, pMemDump, 4, 0);
 		addr += 4;
 		pMemDump += 4;
 	}
 
-	syslog(0, "%s@%d resultsLen=%d", __func__, __LINE__, pFm->resultsLen);
-
-  for (i = 0; i < pFm->goldenMemLen; i++) {
+	// Start of the expected result position in the memory
+  for (i = 0; i < (pFm->goldenMemLen * 4); i++) {
 		if (pFm->goldenMemDump[i] != pFm->pResults[0])
 			continue;
 		if (!memcmp(&pFm->goldenMemDump[i], pFm->pResults, pFm->resultsLen)) {
@@ -1256,7 +1253,7 @@ int __fault_injection_module_golden_simul(void)
 	
 	pFm->resultsIdxGoldenMem = i;
 
-	syslog(0, "Memory index found :D => %d", pFm->resultsIdxGoldenMem);
+	syslog(0, "Memory index was found :D => %d", pFm->resultsIdxGoldenMem);
 
 	// exit from golden test mode
 	pFm->mode = FAULT_INJECTION_MODULE_WITH_FAULT;
@@ -1272,15 +1269,14 @@ int __fault_injection_module_bitflip(int64_t timeTick)
 			FAULT_INJECTION_MODULE_BITFLIP_FAULT)
 		return -1;
 
-	if (pFm->list[pFm->idx].done)
-		return 0;
-
 	cpu_physical_memory_rw(pFm->list[pFm->idx].addr, buf, 4, 0);
+	syslog(0, "before fault mem val buf[0]=%x", buf[0]);
 	// xor operation to simulate bitflip
 	buf[pFm->list[pFm->idx].bit_pos/4] ^= 
 		1 << (pFm->list[pFm->idx].bit_pos % 8); 
 
 	cpu_physical_memory_rw(pFm->list[pFm->idx].addr, buf, 4, 1);
+	syslog(0, "after fault mem val buf[0]=%x", buf[0]);
 
 	return 0;
 }
@@ -1379,21 +1375,20 @@ int fault_injection_module_time_based_trigger(void)
 	int ret = -1;
 	int64_t timeTick = cpu_get_ticks();
 
-	syslog(0, "%s@%d", __func__, __LINE__);
-
 	// Simulation total time reached
-	if (pFm->simultotalTime >= timeTick) {
-		syslog(0, "%s@%d", __func__, __LINE__);
-		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT)
+	if (timeTick >= pFm->simultotalTime) {
+		syslog(0, "%s@%d tick=%lu", __func__, __LINE__, timeTick);
+		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT) {
 			ret = __fault_injection_module_statistics();
+			pFm->idx++;
+		}
 		else
 			ret = __fault_injection_module_golden_simul();
 			
 		// Prepare the system for a new simulation
-		pFm->idx++;
 		if (pFm->idx == pFm->stimuliTotal)
 			__fault_injector_module_export_results();
-
+		
 		cpu_reset_ticks();
 		qmp_system_reset(NULL);
 		return 0;

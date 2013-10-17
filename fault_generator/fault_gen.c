@@ -31,7 +31,7 @@ int main(int argc, char *argv[])
 		return -1;
 	}
 
-	totalTime = 10002000000;
+	totalTime = 12000000000;
 	write(fd, &totalTime, sizeof(totalTime));
 	
 	// 128M
@@ -47,11 +47,11 @@ int main(int argc, char *argv[])
 	fims.mem_fault_type = FAULT_INJECTION_MODULE_BITFLIP_FAULT;
 	fims.trigger = FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER;
 	fims.fault_type = FAULT_INJECTION_MODULE_TRANSIENT;
-	fims.addr = 0x10000;
-	fims.bit_pos = 0;
+	fims.addr = 140;
+	fims.bit_pos = 1;
 	fims.bit_val = 1;
-	fims.start = 500000000000;
-	fims.end = 500001000000;
+	fims.start = 6000000000;
+	fims.end = 6002000000;
 	write(fd, &fims, sizeof(fims));
 
 	fsync(fd);

@@ -27,7 +27,7 @@ rtems_task Init(
   int i;
   unsigned int *vet;
 
-  vet = malloc(sizeof(int)*200);
+  vet = malloc(sizeof(unsigned int)*200);
 	
   printf( "\n\n*** HELLO WORLD TEST ***\n" );
   printf( "Hello World\n" );

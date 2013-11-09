@@ -14,10 +14,9 @@
 
 #define FAULT_REPORTS_FILE   "/home/filipe/mestrado/simul_reports.txt"
 
-#define FAULT_INJECTION_MAX  (10000)
-
 // Simulation Mode
 enum {
+	FAULT_INJECTION_MODULE_DISABLED,
 	FAULT_INJECTION_MODULE_GOLDEN_EXECUTION,
 	FAULT_INJECTION_MODULE_WITH_FAULT,
 };
@@ -31,6 +30,7 @@ enum {
 enum {
 	FAULT_INJECTION_MODULE_MEM_CELL_ARRAY,
 	FAULT_INJECTION_MODULE_DECODER,
+	FAULT_INJECTION_MODULE_MAX_TYPES,
 };
 
 // Mem Fault Type 
@@ -38,6 +38,7 @@ enum {
 	FAULT_INJECTION_MODULE_STUCK_AT_FAULT,	
 	FAULT_INJECTION_MODULE_BITFLIP_FAULT,
 	FAULT_INJECTION_MODULE_COUPLING_FAULT,
+	FAULT_INJECTION_MODULE_MAX_MEM_FAULT_TYPES,
 };
 
 // Decoder Fault type
@@ -52,6 +53,7 @@ enum {
 enum {
 	FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER,
 	FAULT_INJECTION_MODULE_ACCESS_BASED_TRIGGER,
+	FAULT_INJECTION_MODULE_MAX_TRIGGER_TYPES,
 };
 
 // Fault type
@@ -59,6 +61,7 @@ enum {
 	FAULT_INJECTION_MODULE_TRANSIENT,
 	FAULT_INJECTION_MODULE_PERMANENT,
 	FAULT_INJECTION_MODULE_INTERMITTENT,
+	FAULT_INJECTION_MODULE_MAX_DURATION,
 };
 
 struct faultInjectionModuleStimule {
@@ -66,7 +69,7 @@ struct faultInjectionModuleStimule {
 	int mem_fault_type;
 	int decoder_fault_type;
 	int trigger;
-	int fault_type;
+	int duration;
 
 	uint64_t addr;
 	int bit_pos;
@@ -110,7 +113,7 @@ struct faultInjectionModule {
 	// Depends on the number of stimuli in the input file
 	int stimuliTotal;
 	int idx;
-	struct faultInjectionModuleStimule list[FAULT_INJECTION_MAX];
+	struct faultInjectionModuleStimule *list;
 
 	struct faultInjectionStatistics stats;
 };

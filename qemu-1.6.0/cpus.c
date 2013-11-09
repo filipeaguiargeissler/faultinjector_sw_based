@@ -1103,6 +1103,31 @@ static void qemu_dummy_start_vcpu(CPUState *cpu)
 struct faultInjectionModule faultInjectionModuleMgr;
 struct faultInjectionModule *pFm = &faultInjectionModuleMgr;
 
+char *debugModeType[] = {
+		"Mem Cell Array",
+		"Decoder",
+		NULL,
+};
+
+char *debugMemType[] = {
+		"stuck-at-one/zero",
+		"bit-flip",
+		"coupling",
+		NULL,
+};
+
+char *debugTriggerType[] = {
+		"time based",
+		"access based",
+		NULL,
+};
+
+char *debugDurationType[] = {
+		"transiente",
+		"permanent",
+		"intermittent"
+};
+
 uint32_t *__fault_benchmark_result(void)
 {
 	int fdin;
@@ -1131,15 +1156,16 @@ int fault_injection_module_init(void)
 {
 	int fd;
 	int ret;
+	uint32_t totalFaults;
 
 	memset(pFm, 0, sizeof(faultInjectionModuleMgr));
-
-	pFm->mode = FAULT_INJECTION_MODULE_GOLDEN_EXECUTION;
-	pFm->debug = FAULT_INJECTION_MODULE_DEBUG_ON;
 
 	fd = open(FAULT_STIMULI_FILE, O_RDONLY);
 	if (fd == -1)
 		return -1;
+
+	pFm->mode = FAULT_INJECTION_MODULE_GOLDEN_EXECUTION;
+	pFm->debug = FAULT_INJECTION_MODULE_DEBUG_ON;
 
 	ret = read(fd, &pFm->simultotalTime, sizeof(unsigned long));
 	if (ret == -1)
@@ -1153,8 +1179,14 @@ int fault_injection_module_init(void)
 	if (ret == -1)
 		return -1;
 
-	syslog(0, "total time=%lu\n", pFm->simultotalTime);
+	ret = read(fd, &totalFaults, sizeof(totalFaults));
+	if (ret == -1)
+			return -1;
 
+	pFm->list = malloc(totalFaults * sizeof(struct faultInjectionModuleStimule));
+	if (!pFm)
+			return -1;
+	
 	while (read(fd, &pFm->list[pFm->stimuliTotal], 
 			sizeof(struct faultInjectionModuleStimule)) > 0)
 		pFm->stimuliTotal++;
@@ -1197,8 +1229,10 @@ int __fault_injection_module_statistics(void)
 	pos = pFm->resultsIdxGoldenMem;
 
 	if (memcmp(&pFm->stats.pMemDump[pos], &pFm->goldenMemDump[pos], 
-													pFm->resultsLen)) 
+													pFm->resultsLen)) {
+		syslog(0, "%s@%d", __func__, __LINE__);
 		pFm->stats.dataflow_err++;
+	}
 
 	return 0;
 }
@@ -1286,6 +1320,8 @@ int __fault_injection_module_mem_array(uint64_t addr, uint8_t *val, int is_write
 	int64_t timeTick;
 	int isTimeBased = 0;
 
+	syslog(0, "addr=%lu is_write=%d", __func__, __LINE__, addr, is_write);
+
 	// Check address
 	if (pFm->list[pFm->idx].addr != addr)
 		return -1;
@@ -1357,6 +1393,9 @@ int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, int is
 {
 	int ret;
 
+	if (pFm->mode == FAULT_INJECTION_MODULE_DISABLED)
+			return -1;
+
 	// No faults are injected in Golden test mode
 	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
 		return -1;
@@ -1375,10 +1414,22 @@ int fault_injection_module_time_based_trigger(void)
 	int ret = -1;
 	int64_t timeTick = cpu_get_ticks();
 
+	if (pFm->mode == FAULT_INJECTION_MODULE_DISABLED)
+			return ret;
+
 	// Simulation total time reached
 	if (timeTick >= pFm->simultotalTime) {
 		syslog(0, "%s@%d tick=%lu", __func__, __LINE__, timeTick);
 		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT) {
+			syslog(0, "mode=%s mem_fault=%s trigger=%s duration=%s time(%ld, %ld) softError(bit_pos, val)=(%x, %x) maddr=%lu\n", 
+							debugModeType[pFm->list[pFm->idx].mode],
+							debugMemType[pFm->list[pFm->idx].mem_fault_type],
+							debugTriggerType[pFm->list[pFm->idx].trigger], 
+							debugDurationType[pFm->list[pFm->idx].duration], 
+							pFm->list[pFm->idx].start, pFm->list[pFm->idx].end, 
+							pFm->list[pFm->idx].bit_pos, pFm->list[pFm->idx].bit_val,
+							pFm->list[pFm->idx].addr);
+
 			ret = __fault_injection_module_statistics();
 			pFm->idx++;
 		}

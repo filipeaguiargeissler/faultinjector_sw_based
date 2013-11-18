@@ -29,7 +29,8 @@ enum {
 // Mode
 enum {
 	FAULT_INJECTION_MODULE_MEM_CELL_ARRAY,
-	FAULT_INJECTION_MODULE_DECODER,
+	// FAULT_INJECTION_MODULE_DECODER,
+	FAULT_INJECTION_MODULE_CPU_REGS,
 	FAULT_INJECTION_MODULE_MAX_TYPES,
 };
 
@@ -41,6 +42,14 @@ enum {
 	FAULT_INJECTION_MODULE_MAX_MEM_FAULT_TYPES,
 };
 
+// CPU Fault Type
+enum {
+	FAULT_INJECTION_MODULE_CPU_REG_STUCK_AT_FAULT,
+	FAULT_INJECTION_MODULE_CPU_REG_BITFLIP_FAULT,
+//	FAULT_INJECTION_MODULE_CPU_REG_PC_FAULT,
+	FAULT_INJECTION_MODULE_MAX_CPU_FAULT_TYPES,
+};
+
 // Decoder Fault type
 enum {
 	FAULT_INJECTION_MODULE_FAILURE_TO_ACCESS_CELL,
@@ -49,14 +58,14 @@ enum {
 	FAULT_INJECTION_MODULE_ACCESS_MANY_ADDRS_FOR_SAME_CELL,
 };
 
-// Trigger
+// Trigger type
 enum {
 	FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER,
 	FAULT_INJECTION_MODULE_ACCESS_BASED_TRIGGER,
 	FAULT_INJECTION_MODULE_MAX_TRIGGER_TYPES,
 };
 
-// Fault type
+// Duration
 enum {
 	FAULT_INJECTION_MODULE_TRANSIENT,
 	FAULT_INJECTION_MODULE_PERMANENT,
@@ -68,16 +77,22 @@ struct faultInjectionModuleStimule {
 	int mode;
 	int mem_fault_type;
 	int decoder_fault_type;
+	int cpu_fault_type;
 	int trigger;
 	int duration;
 
 	uint64_t addr;
+	int reg_idx;
 	int bit_pos;
 	int bit_val;
 	int64_t start;
 	int64_t end;
 
-	int done;
+	// Used by the QEMU software
+#define INVALID_VAL  (0x00000)
+#define VALID_VAL    (0x00001)
+	uint8_t flags;
+	uint8_t val[4];
 };
 
 struct faultInjectionStatistics {
@@ -104,7 +119,7 @@ struct faultInjectionModule {
 	// Allocated memory with system expected results
 	uint8_t *pResults;	
 	int resultsLen;
-  uint8_t resultsIdxGoldenMem;
+	uint8_t resultsIdxGoldenMem;
 	
 	// Allocated memory with golden execution result
 	// i386 arch
@@ -119,11 +134,7 @@ struct faultInjectionModule {
 };
 
 
-int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, 
-		int is_write);
-
-
-int fault_injection_module_time_based_trigger(void);
+int fault_injection_module_check_and_trigger(void);
 
 #endif
 

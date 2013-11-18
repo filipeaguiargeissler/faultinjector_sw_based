@@ -35,6 +35,7 @@ static struct option long_options[] =
 	{"output-file",    required_argument, 0, 'o'},
 	{"range-init",    required_argument, 0, 'r'},
 	{"range-end",    required_argument, 0, 'b'},
+	{"registers-num",    required_argument, 0, 'a'},
 	{0, 0, 0, 0}
 };
 
@@ -49,7 +50,7 @@ int main(int argc, char *argv[])
 {
 		int fd, c, i;
 		char *file = NULL;
-		uint64_t totalTime, memInit, memEnd, memRangeInit = 0, memRangeEnd = 0;
+		uint64_t totalTime, memInit, memEnd, memRangeInit = 0, memRangeEnd = 0, registers = 8;
 		uint32_t totalFaults;
 		struct faultInjectionModuleStimule fims;
 
@@ -57,7 +58,7 @@ int main(int argc, char *argv[])
 		{
 			int option_index = 0;
 
-			c = getopt_long (argc, argv, "t:i:e:f:o:r:b:",
+			c = getopt_long (argc, argv, "t:i:e:f:o:r:b:a:",
 							long_options, &option_index);
 
 			/* Detect the end of the options. */
@@ -103,7 +104,11 @@ int main(int argc, char *argv[])
 
 			case 'b':
 					memRangeEnd = atoi(optarg);
-					break;	
+					break;
+				
+			case 'a':
+					registers = atoi(optarg);
+					break;		
 
 			case '?':
 					/* getopt_long already printed an error message. */
@@ -133,21 +138,23 @@ int main(int argc, char *argv[])
 				fims.mode = rand() % FAULT_INJECTION_MODULE_MAX_TYPES;
 				fims.mem_fault_type = rand() % FAULT_INJECTION_MODULE_MAX_MEM_FAULT_TYPES;
 				fims.trigger = rand() % FAULT_INJECTION_MODULE_MAX_TRIGGER_TYPES;
+				fims.cpu_fault_type = rand() % FAULT_INJECTION_MODULE_MAX_CPU_FAULT_TYPES;
 				fims.duration = rand() % FAULT_INJECTION_MODULE_MAX_DURATION;
 				if (memRangeEnd) {
 						fims.addr = random_in_range(memRangeInit, memRangeEnd); 
 				} else {
 						fims.addr = random_in_range(memInit, memEnd);
 				}
+				fims.reg_idx = rand() % registers;
 				fims.bit_pos = rand() % 8;
 				fims.bit_val = rand() % 2;
 				fims.start = rand() % totalTime;
-				fims.end = totalTime;//random_in_range(fims.start, totalTime);
+				fims.end = random_in_range(fims.start, totalTime);
 				write(fd, &fims, sizeof(fims));
-				printf("debug mode=%d mem_fault=%d trigger=%d duration=%d time(%ld, %ld) softError(bit_pos, val)=(%x, %x) maddr=%lu\n", 
+				printf("debug mode=%d mem_fault=%d trigger=%d duration=%d time(%ld, %ld) error(bit_pos, val)=(%x, %x) maddr=%lu reg=%d\n", 
 								fims.mode, fims.mem_fault_type,
 								fims.trigger, fims.duration, fims.start, fims.end, fims.bit_pos, fims.bit_val,
-								fims.addr);
+								fims.addr, fims.reg_idx);
 		}
 
 		fsync(fd);

@@ -630,6 +630,7 @@ int cpu_exec(CPUArchState *env)
                 if (likely(!cpu->exit_request)) {
                     tc_ptr = tb->tc_ptr;
                     /* execute the generated code */
+//					hw_breakpoint_insert(env, 4); // faguiar
                     next_tb = cpu_tb_exec(cpu, tc_ptr);
                     switch (next_tb & TB_EXIT_MASK) {
                     case TB_EXIT_REQUESTED:
@@ -673,6 +674,9 @@ int cpu_exec(CPUArchState *env)
                     default:
                         break;
                     }
+#ifdef FAULT_INJECTION_API
+					fault_injection_module_check_and_trigger();
+#endif
                 }
                 cpu->current_tb = NULL;
                 /* reset soft MMU for next block (it can currently
@@ -685,9 +689,6 @@ int cpu_exec(CPUArchState *env)
             cpu = current_cpu;
             env = cpu->env_ptr;
         }
-#ifdef FAULT_INJECTION_API
-		fault_injection_module_time_based_trigger();
-#endif
     } /* for(;;) */
 
 

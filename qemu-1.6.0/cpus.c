@@ -1103,8 +1103,10 @@ static void qemu_dummy_start_vcpu(CPUState *cpu)
 struct faultInjectionModule faultInjectionModuleMgr;
 struct faultInjectionModule *pFm = &faultInjectionModuleMgr;
 
+/* debug helpers */
 char *debugModeType[] = {
 		"Mem Cell Array",
+		"CPU Register"
 		"Decoder",
 		NULL,
 };
@@ -1113,6 +1115,13 @@ char *debugMemType[] = {
 		"stuck-at-one/zero",
 		"bit-flip",
 		"coupling",
+		NULL,
+};
+
+char *debugCPUType[] = {
+		"stuck-at-one/zero",
+		"bit-flip",
+		"pc-fault",
 		NULL,
 };
 
@@ -1125,8 +1134,29 @@ char *debugTriggerType[] = {
 char *debugDurationType[] = {
 		"transiente",
 		"permanent",
-		"intermittent"
+		"intermittent",
+		NULL,
 };
+
+int print_fault_entry(void)
+{
+	syslog(0, "[FISBE] DEBUG - Fault Injection Entry (%d)", pFm->idx);
+
+	syslog(0, "  Mode - %s", debugModeType[pFm->list[pFm->idx].mode]);
+	syslog(0, "  Mem Type - %s", debugMemType[pFm->list[pFm->idx].mem_fault_type]);
+	syslog(0, "  CPU Type - %s", debugCPUType[pFm->list[pFm->idx].cpu_fault_type]);
+	syslog(0, "  Duration - %s", debugDurationType[pFm->list[pFm->idx].duration]);
+	syslog(0, "  Clock interval - [%ld, %ld]", pFm->list[pFm->idx].start, 
+					pFm->list[pFm->idx].end);
+	syslog(0, "  Reg IDX - %d", pFm->list[pFm->idx].reg_idx);
+	syslog(0, "  Error bit_pos %d val %d", pFm->list[pFm->idx].bit_pos, 
+					pFm->list[pFm->idx].bit_val);
+	syslog(0, "  Target Addr - %x", pFm->list[pFm->idx].addr);
+
+	return 0;
+}
+
+/* fault injection module implementation */
 
 uint32_t *__fault_benchmark_result(void)
 {
@@ -1143,6 +1173,8 @@ uint32_t *__fault_benchmark_result(void)
 		syslog(0, "error 2");
 
 	pFm->resultsLen = statbuf.st_size;
+
+	syslog(0, "[FISBE] DEBUG resultsLen=%d", pFm->resultsLen);
 
 	/* mmap the input file */
 	if ((src = mmap(0, statbuf.st_size, PROT_READ, MAP_SHARED, fdin, 0))
@@ -1197,6 +1229,8 @@ int fault_injection_module_init(void)
 
 	// Pre-allocate buffers
 	pFm->goldenMemLen = pFm->goldenMemEnd - pFm->goldenMemInit;
+
+	syslog(0, "[FISBE] DEBUG goldenMemLen=%d", pFm->goldenMemLen);
 
 	pFm->goldenMemDump = malloc(pFm->goldenMemLen * sizeof(uint32_t));
 	if (!pFm->goldenMemDump)
@@ -1261,7 +1295,7 @@ int __fault_injection_module_golden_simul(void)
 	uint8_t *pMemDump;
 	uint64_t addr = 0;
 
-	syslog(0, "Getting Golden Execution Results");
+	syslog(0, "[FISBE] DEBUG Getting Golden Execution Results");
 
 	pMemDump = &pFm->goldenMemDump[0];
 	for (i = 0; i < pFm->goldenMemLen; i++) {
@@ -1271,7 +1305,7 @@ int __fault_injection_module_golden_simul(void)
 	}
 
 	// Start of the expected result position in the memory
-  for (i = 0; i < (pFm->goldenMemLen * 4); i++) {
+	for (i = 0, addr = 0; i < (pFm->goldenMemLen * 4); i++, addr++) {
 		if (pFm->goldenMemDump[i] != pFm->pResults[0])
 			continue;
 		if (!memcmp(&pFm->goldenMemDump[i], pFm->pResults, pFm->resultsLen)) {
@@ -1281,13 +1315,13 @@ int __fault_injection_module_golden_simul(void)
 	}
 	
 	if (!resultsFound) {
-		syslog(0, "An error has occurred - the expected memory result couldn't be found :(");
+		syslog(0, "[FISBE] DEBUG An error has occurred - the expected memory result couldn't be found :(");
 		exit(1);
 	}
 	
 	pFm->resultsIdxGoldenMem = i;
 
-	syslog(0, "Memory index was found :D => %d", pFm->resultsIdxGoldenMem);
+	syslog(0, "[FISBE] DEBUG Benchmark result is at memDumpIndex=%d, paddr=0x%x", pFm->resultsIdxGoldenMem, addr);
 
 	// exit from golden test mode
 	pFm->mode = FAULT_INJECTION_MODULE_WITH_FAULT;
@@ -1295,83 +1329,67 @@ int __fault_injection_module_golden_simul(void)
 	return 0;	
 }
 
-int __fault_injection_module_bitflip(int64_t timeTick)
+/**
+  * Mem Array checkpoint implementation
+  * 
+  * - stack-at fault is implemented in a way that we
+  *   always read and write the fault in the memory. This
+  *   causes a high impact in performance. We do this because
+  *   we don't know if write operation has been made or
+  *   a read operation will be made.
+  * - coupling fault verifies if the current memory value is
+  *   different of the last one and applies the fault. This type
+  *   of fault is applied only in the write memory cases.
+  *
+  */
+int __fault_injection_module_mem_array(void)
 {
-	uint8_t buf[4]; // 32 bit processor
-
-	if (pFm->list[pFm->idx].mem_fault_type != 
-			FAULT_INJECTION_MODULE_BITFLIP_FAULT)
-		return -1;
-
-	cpu_physical_memory_rw(pFm->list[pFm->idx].addr, buf, 4, 0);
-	syslog(0, "before fault mem val buf[0]=%x", buf[0]);
-	// xor operation to simulate bitflip
-	buf[pFm->list[pFm->idx].bit_pos/4] ^= 
-		1 << (pFm->list[pFm->idx].bit_pos % 8); 
-
-	cpu_physical_memory_rw(pFm->list[pFm->idx].addr, buf, 4, 1);
-	syslog(0, "after fault mem val buf[0]=%x", buf[0]);
-
-	return 0;
-}
-
-int __fault_injection_module_mem_array(uint64_t addr, uint8_t *val, int is_write)
-{
-	int64_t timeTick;
-	int isTimeBased = 0;
-
-	syslog(0, "addr=%lu is_write=%d", __func__, __LINE__, addr, is_write);
-
-	// Check address
-	if (pFm->list[pFm->idx].addr != addr)
-		return -1;
-
-	if (pFm->list[pFm->idx].trigger == 
-			FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER) {
-		isTimeBased = 1;
-		timeTick = cpu_get_ticks();
-	}
-
-	// Time based decision
-	if (isTimeBased && (pFm->list[pFm->idx].start > timeTick ||
-				pFm->list[pFm->idx].end < timeTick))
-		return -1;
+	uint8_t val[4];
+	uint64_t addr = pFm->list[pFm->idx].addr;
 
 	switch (pFm->list[pFm->idx].mem_fault_type) {
 	case FAULT_INJECTION_MODULE_STUCK_AT_FAULT:
-
-		if (!is_write)
-			cpu_physical_memory_rw(addr, val, 4, 0);
-
-		// stack-at-one
+		cpu_physical_memory_rw(addr, val, 4, 0);
+		// stack-at-one/zero
 		if (pFm->list[pFm->idx].bit_val)
 			val[pFm->list[pFm->idx].bit_pos/4] |= 
-				1 << (pFm->list[pFm->idx].bit_pos % 8); 
+				(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
 		// stack-at-zero
-		else
 			val[pFm->list[pFm->idx].bit_pos/4] &= 
 				~(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
-		if (is_write)
-			cpu_physical_memory_rw(addr, val, 4, 1);
+		cpu_physical_memory_rw(addr, val, 4, 1);
 		break;
 
 	case FAULT_INJECTION_MODULE_COUPLING_FAULT:
-		if (is_write) {
-			cpu_physical_memory_rw(addr, val, 4, 1);
-			cpu_physical_memory_rw(addr+1, val, 4, 1);
+		cpu_physical_memory_rw(addr, val, 4, 0);
+
+		if ((pFm->list[pFm->idx].flags & VALID_VAL) == INVALID_VAL) {
+				pFm->list[pFm->idx].flags |= VALID_VAL;
+				goto valid_val;
 		}
+		
+		if (memcmp(pFm->list[pFm->idx].val, val, sizeof(val)))
+				cpu_physical_memory_rw(addr + 1, val, 4, 1);
+valid_val:
+		// keep the last memory value to be used later
+		memcpy(pFm->list[pFm->idx].val, val, sizeof(val));
+		break;
+
+	case FAULT_INJECTION_MODULE_BITFLIP_FAULT:
+		cpu_physical_memory_rw(addr, val, 4, 0);
+		// XOR operation to simulate bitflip
+		val[pFm->list[pFm->idx].bit_pos/4] ^= 
+				1 << (pFm->list[pFm->idx].bit_pos % 8); 
+		cpu_physical_memory_rw(addr, val, 4, 1);
 		break;
 	}
 
 	return 0;
 }
 
-int __fault_injection_module_decoder(uint64_t addr, uint8_t *val, int is_write)
+int __fault_injection_module_decoder(void)
 {
-	// Check address
-	if (pFm->list[pFm->idx].addr != addr)
-		return -1;
-
+	// TODO
 	switch (pFm->list[pFm->idx].decoder_fault_type) {
 	case  FAULT_INJECTION_MODULE_FAILURE_TO_ACCESS_CELL:
 		break;
@@ -1385,51 +1403,99 @@ int __fault_injection_module_decoder(uint64_t addr, uint8_t *val, int is_write)
 		break;
 	}
 
+	return 0;
+}
+
+/**
+ * CPU Registers checkpoint implementation
+ *
+ * The fault injection procedure is similar to the Mem Array
+ * described above.
+ *
+ */
+int __fault_injection_module_cpu_regs(void)
+{
+    CPUState *cpu = current_cpu;
+	CPUArchState *env = cpu->env_ptr;
+	uint32 val[4];
+
+	memcpy(val, &env->regs[pFm->list[pFm->idx].reg_idx], sizeof(val));
+
+	if (pFm->list[pFm->idx].reg_idx >= CPU_NB_REGS32) {
+		syslog(0, "[FISBE] DEBUG  error invalid register value");
+		return -1;
+	}
+
+	switch (pFm->list[pFm->idx].cpu_fault_type) {
+	case FAULT_INJECTION_MODULE_CPU_REG_STUCK_AT_FAULT:
+		// stack-at-one/zero
+		if (pFm->list[pFm->idx].bit_val)
+			val[pFm->list[pFm->idx].bit_pos/4] |= 
+				(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
+		// stack-at-zero
+		else
+			val[pFm->list[pFm->idx].bit_pos/4] &= 
+				~(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
+		break;
+
+	case FAULT_INJECTION_MODULE_CPU_REG_BITFLIP_FAULT:
+		// XOR operation to simulate bitflip
+		val[pFm->list[pFm->idx].bit_pos/4] ^= 
+				1 << (pFm->list[pFm->idx].bit_pos % 8); 
+		break;
+
+//	case FAULT_INJECTION_MODULE_CPU_REG_PC_FAULT:
+		// TODO
+		break;
+	}
+
+	memcpy(&env->regs[pFm->list[pFm->idx].reg_idx], val, sizeof(val));
 
 	return 0;
 }
 
-int fault_injection_module_check_and_trigger(uint64_t addr, uint8_t *val, int is_write)
-{
-	int ret;
-
-	if (pFm->mode == FAULT_INJECTION_MODULE_DISABLED)
-			return -1;
-
-	// No faults are injected in Golden test mode
-	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
-		return -1;
-
-	if (pFm->list[pFm->idx].mode == 
-			FAULT_INJECTION_MODULE_MEM_CELL_ARRAY)
-		ret = __fault_injection_module_mem_array(addr, val, is_write);
-	else
-		ret = __fault_injection_module_decoder(addr, val, is_write);
-
-	return ret;
-}
-
-int fault_injection_module_time_based_trigger(void)
+/**
+ * Fault Injection Module checkpoint implementation
+ * 
+ * This function verifies whether a fault should be injected or the 
+ * application reached the total time of its execution. In the last one case
+ * the results are computed and a new simulation is started.
+ *  
+ */
+int fault_injection_module_check_and_trigger(void)
 {
 	int ret = -1;
 	int64_t timeTick = cpu_get_ticks();
+	static int64_t tickTickOffset = 0;
+
+	// We're positioning checkpoints throught the code to inject faults
+	// in a specific time tick. I think this isn't a good idea due to the
+	// translation blocks be executed in most part out of the qemu control
+	// (tcg_qemu_tb_exec).
+	//
+    // Future Works:
+	// In order to have a more accurate simulation we should modify the
+	// TCG intermediate code generation as follow:
+   	//	- in the memory fault case the fault could be injected adding code
+	//  inside the translation block. To do that is necessary to flush
+	//  the tcg code cache avoiding the linking between translation blocks.
+	//  However this approach causes a high impact in the performance.
+    //	
+	//  - Another approach would be use the QEMU GDB Stubs in order to 
+	//  trace the cpu memory access and intercept the operation through
+	//  memory watchpoints. The impact in performance should be evaluate
+	//  for this case too.
+	//
+	// 
 
 	if (pFm->mode == FAULT_INJECTION_MODULE_DISABLED)
 			return ret;
 
 	// Simulation total time reached
-	if (timeTick >= pFm->simultotalTime) {
-		syslog(0, "%s@%d tick=%lu", __func__, __LINE__, timeTick);
+	if (timeTick >= (pFm->simultotalTime + tickTickOffset)) {
+		syslog(0, "[FISBE:%lu] benchmark time ended", timeTick);
 		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT) {
-			syslog(0, "mode=%s mem_fault=%s trigger=%s duration=%s time(%ld, %ld) softError(bit_pos, val)=(%x, %x) maddr=%lu\n", 
-							debugModeType[pFm->list[pFm->idx].mode],
-							debugMemType[pFm->list[pFm->idx].mem_fault_type],
-							debugTriggerType[pFm->list[pFm->idx].trigger], 
-							debugDurationType[pFm->list[pFm->idx].duration], 
-							pFm->list[pFm->idx].start, pFm->list[pFm->idx].end, 
-							pFm->list[pFm->idx].bit_pos, pFm->list[pFm->idx].bit_val,
-							pFm->list[pFm->idx].addr);
-
+			print_fault_entry();
 			ret = __fault_injection_module_statistics();
 			pFm->idx++;
 		}
@@ -1439,8 +1505,9 @@ int fault_injection_module_time_based_trigger(void)
 		// Prepare the system for a new simulation
 		if (pFm->idx == pFm->stimuliTotal)
 			__fault_injector_module_export_results();
-		
-		cpu_reset_ticks();
+	syslog(0, "%s@%d", __func__, __LINE__);	
+//		cpu_reset_ticks();
+		tickTickOffset = timeTick;
 		qmp_system_reset(NULL);
 		return 0;
 	}
@@ -1449,16 +1516,36 @@ int fault_injection_module_time_based_trigger(void)
 	if (pFm->mode == FAULT_INJECTION_MODULE_GOLDEN_EXECUTION)
 		return ret;
 
-	// Verify trigger type
-	if (pFm->list[pFm->idx].trigger != 
-		FAULT_INJECTION_MODULE_TIME_BASED_TRIGGER)
-		return ret;
+	switch (pFm->list[pFm->idx].duration) {
+	case FAULT_INJECTION_MODULE_TRANSIENT:
+		// Check the time tick related to the fault to be injected
+		if ((pFm->list[pFm->idx].start > timeTick ||
+				pFm->list[pFm->idx].end < timeTick))
+			return -1;
+	
+	case FAULT_INJECTION_MODULE_PERMANENT:
+		// nothing todo
+		break;
+	
+	case FAULT_INJECTION_MODULE_INTERMITTENT:
+		srand(timeTick);
+		if (rand() % 2)
+				return -1;
+		break;
+	}
 
 	switch (pFm->list[pFm->idx].mode) {
 	case FAULT_INJECTION_MODULE_MEM_CELL_ARRAY:
-		ret = __fault_injection_module_bitflip(timeTick);
+		ret = __fault_injection_module_mem_array();
 		break;
-	// TODO	
+	
+	//case FAULT_INJECTION_MODULE_DECODER:
+	//	ret = __fault_injection_module_decoder();
+	//	break;
+
+	case FAULT_INJECTION_MODULE_CPU_REGS:
+		ret = __fault_injection_module_cpu_regs();
+		break;
 	}
 
 	return ret;

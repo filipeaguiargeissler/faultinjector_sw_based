@@ -2294,12 +2294,6 @@ static inline uint32_t ldl_phys_internal(hwaddr addr,
                                 & TARGET_PAGE_MASK)
                                + addr1);
 
-#ifdef FAULT_INJECTION_API
-	// faguiar@parks
-	if (fault_injection_module_check_and_trigger(addr1, 
-		&val, 0) != -1)
-		return val;
-#endif
 
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:
@@ -2361,12 +2355,7 @@ static inline uint64_t ldq_phys_internal(hwaddr addr,
                                 & TARGET_PAGE_MASK)
                                + addr1);
 
-#ifdef FAULT_INJECTION_API
-	// faguiar@parks
-	if (fault_injection_module_check_and_trigger(addr1, 
-		&val, 0) != -1)
-		return val;
-#endif
+
 
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:
@@ -2437,12 +2426,7 @@ static inline uint32_t lduw_phys_internal(hwaddr addr,
                                 & TARGET_PAGE_MASK)
                                + addr1);
 
-#ifdef FAULT_INJECTION_API
-	// faguiar@parks
-	if (fault_injection_module_check_and_trigger(addr1, 
-		&val, 0) != -1)
-		return val;
-#endif
+
 
         switch (endian) {
         case DEVICE_LITTLE_ENDIAN:
@@ -2490,12 +2474,7 @@ void stl_phys_notdirty(hwaddr addr, uint32_t val)
         io_mem_write(mr, addr1, val, 4);
     } else {
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
-#ifdef FAULT_INJECTION_API
-	// faguiar@parks
-	if (fault_injection_module_check_and_trigger(addr1, 
-		&val, 1) != -1)
-		return;
-#endif
+
         ptr = qemu_get_ram_ptr(addr1);
         stl_p(ptr, val);
 
@@ -2537,12 +2516,7 @@ static inline void stl_phys_internal(hwaddr addr, uint32_t val,
         /* RAM case */
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
 
-#ifdef FAULT_INJECTION_API
-	// faguiar@parks
-	if (fault_injection_module_check_and_trigger(addr1, 
-		&val, 1) != -1)
-		return;
-#endif
+
 
         ptr = qemu_get_ram_ptr(addr1);
         switch (endian) {
@@ -2608,12 +2582,7 @@ static inline void stw_phys_internal(hwaddr addr, uint32_t val,
         /* RAM case */
         addr1 += memory_region_get_ram_addr(mr) & TARGET_PAGE_MASK;
 
-#ifdef FAULT_INJECTION_API
-	// faguiar@parks
-	if (fault_injection_module_check_and_trigger(addr1, 
-		&val, 1) != -1)
-		return;
-#endif
+
 
         ptr = qemu_get_ram_ptr(addr1);
         switch (endian) {

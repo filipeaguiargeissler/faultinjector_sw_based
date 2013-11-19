@@ -134,7 +134,9 @@ struct faultInjectionModule {
 };
 
 
-int fault_injection_module_check_and_trigger(void);
+int fault_injection_module_check_and_trigger(uint32_t *regs);
+
+int fault_injection_module_exception_handler(int exception_index, int error_code);
 
 #endif
 

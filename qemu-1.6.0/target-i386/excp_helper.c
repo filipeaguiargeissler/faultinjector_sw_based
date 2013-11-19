@@ -22,6 +22,8 @@
 #include "sysemu/sysemu.h"
 #include "helper.h"
 
+#include "fault_injection_module.h"
+
 #if 0
 #define raise_exception_err(env, a, b)                                  \
     do {                                                                \
@@ -106,6 +108,12 @@ static void QEMU_NORETURN raise_interrupt2(CPUX86State *env, int intno,
     env->error_code = error_code;
     env->exception_is_int = is_int;
     env->exception_next_eip = env->eip + next_eip_addend;
+
+#ifdef FAULT_INJECTION_API
+	if (!is_int)
+			fault_injection_module_exception_handler(env->exception_index, error_code);
+#endif	
+
     cpu_loop_exit(env);
 }
 
@@ -125,5 +133,5 @@ void raise_exception_err(CPUX86State *env, int exception_index,
 
 void raise_exception(CPUX86State *env, int exception_index)
 {
-    raise_interrupt2(env, exception_index, 0, 0, 0);
+	raise_interrupt2(env, exception_index, 0, 0, 0);
 }

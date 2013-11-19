@@ -148,9 +148,9 @@ int64_t cpu_get_ticks(void)
         if (timers_state.cpu_ticks_prev > ticks) {
             /* Note: non increasing ticks may happen if the host uses
                software suspend */
-            timers_state.cpu_ticks_offset += timers_state.cpu_ticks_prev - ticks;
+//            timers_state.cpu_ticks_offset += timers_state.cpu_ticks_prev - ticks;
         }
-        timers_state.cpu_ticks_prev = ticks;
+//        timers_state.cpu_ticks_prev = ticks;
         return ticks + timers_state.cpu_ticks_offset;
     }
 }
@@ -1106,7 +1106,7 @@ struct faultInjectionModule *pFm = &faultInjectionModuleMgr;
 /* debug helpers */
 char *debugModeType[] = {
 		"Mem Cell Array",
-		"CPU Register"
+		"CPU Register",
 		"Decoder",
 		NULL,
 };
@@ -1140,7 +1140,7 @@ char *debugDurationType[] = {
 
 int print_fault_entry(void)
 {
-	syslog(0, "[FISBE] DEBUG - Fault Injection Entry (%d)", pFm->idx);
+	syslog(0, "[FISBE] DEBUG - Next Fault Injection Entry (%d)", pFm->idx);
 
 	syslog(0, "  Mode - %s", debugModeType[pFm->list[pFm->idx].mode]);
 	syslog(0, "  Mem Type - %s", debugMemType[pFm->list[pFm->idx].mem_fault_type]);
@@ -1203,6 +1203,8 @@ int fault_injection_module_init(void)
 	if (ret == -1)
 		return -1;
 
+	syslog(0, "[FISBE] simultotalTime=%lu", pFm->simultotalTime);
+
 	ret = read(fd, &pFm->goldenMemInit, sizeof(unsigned long));
 	if (ret == -1)
 		return -1;
@@ -1251,8 +1253,6 @@ int __fault_injection_module_statistics(void)
 	uint8_t *pMemDump;
 	uint64_t addr = 0;
 
-	syslog(0, "%s@%d", __func__, __LINE__);
-	
 	pMemDump = &pFm->stats.pMemDump[0];
 	for (i = 0; i < pFm->goldenMemLen; i++) {
 		cpu_physical_memory_rw(pFm->goldenMemInit + addr, pMemDump, 4, 0);
@@ -1264,7 +1264,6 @@ int __fault_injection_module_statistics(void)
 
 	if (memcmp(&pFm->stats.pMemDump[pos], &pFm->goldenMemDump[pos], 
 													pFm->resultsLen)) {
-		syslog(0, "%s@%d", __func__, __LINE__);
 		pFm->stats.dataflow_err++;
 	}
 
@@ -1352,10 +1351,10 @@ int __fault_injection_module_mem_array(void)
 		cpu_physical_memory_rw(addr, val, 4, 0);
 		// stack-at-one/zero
 		if (pFm->list[pFm->idx].bit_val)
-			val[pFm->list[pFm->idx].bit_pos/4] |= 
+			val[pFm->list[pFm->idx].bit_pos/8] |= 
 				(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
 		// stack-at-zero
-			val[pFm->list[pFm->idx].bit_pos/4] &= 
+			val[pFm->list[pFm->idx].bit_pos/8] &= 
 				~(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
 		cpu_physical_memory_rw(addr, val, 4, 1);
 		break;
@@ -1378,7 +1377,7 @@ valid_val:
 	case FAULT_INJECTION_MODULE_BITFLIP_FAULT:
 		cpu_physical_memory_rw(addr, val, 4, 0);
 		// XOR operation to simulate bitflip
-		val[pFm->list[pFm->idx].bit_pos/4] ^= 
+		val[pFm->list[pFm->idx].bit_pos/8] ^= 
 				1 << (pFm->list[pFm->idx].bit_pos % 8); 
 		cpu_physical_memory_rw(addr, val, 4, 1);
 		break;
@@ -1413,13 +1412,14 @@ int __fault_injection_module_decoder(void)
  * described above.
  *
  */
-int __fault_injection_module_cpu_regs(void)
+int __fault_injection_module_cpu_regs(uint32_t *regs)
 {
-    CPUState *cpu = current_cpu;
-	CPUArchState *env = cpu->env_ptr;
-	uint32 val[4];
+	uint8_t val[4];
 
-	memcpy(val, &env->regs[pFm->list[pFm->idx].reg_idx], sizeof(val));
+	val[0] = (regs[pFm->list[pFm->idx].reg_idx]>>24) & 0xFF;
+	val[1] = (regs[pFm->list[pFm->idx].reg_idx]>>16) & 0xFF;
+	val[2] = (regs[pFm->list[pFm->idx].reg_idx]>>8) & 0xFF;
+	val[3] = regs[pFm->list[pFm->idx].reg_idx] & 0xFF;
 
 	if (pFm->list[pFm->idx].reg_idx >= CPU_NB_REGS32) {
 		syslog(0, "[FISBE] DEBUG  error invalid register value");
@@ -1430,17 +1430,17 @@ int __fault_injection_module_cpu_regs(void)
 	case FAULT_INJECTION_MODULE_CPU_REG_STUCK_AT_FAULT:
 		// stack-at-one/zero
 		if (pFm->list[pFm->idx].bit_val)
-			val[pFm->list[pFm->idx].bit_pos/4] |= 
+			val[pFm->list[pFm->idx].bit_pos/8] |= 
 				(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
 		// stack-at-zero
 		else
-			val[pFm->list[pFm->idx].bit_pos/4] &= 
+			val[pFm->list[pFm->idx].bit_pos/8] &= 
 				~(1 << (pFm->list[pFm->idx].bit_pos % 8)); 
 		break;
 
 	case FAULT_INJECTION_MODULE_CPU_REG_BITFLIP_FAULT:
 		// XOR operation to simulate bitflip
-		val[pFm->list[pFm->idx].bit_pos/4] ^= 
+		val[pFm->list[pFm->idx].bit_pos/8] ^= 
 				1 << (pFm->list[pFm->idx].bit_pos % 8); 
 		break;
 
@@ -1449,7 +1449,10 @@ int __fault_injection_module_cpu_regs(void)
 		break;
 	}
 
-	memcpy(&env->regs[pFm->list[pFm->idx].reg_idx], val, sizeof(val));
+	regs[pFm->list[pFm->idx].reg_idx] = (val[0]>>24) & 0xFF;
+	regs[pFm->list[pFm->idx].reg_idx] |= (val[1]>>16) & 0xFF;
+	regs[pFm->list[pFm->idx].reg_idx] |= (val[2]>>8) & 0xFF;
+	regs[pFm->list[pFm->idx].reg_idx] |= val[3] & 0xFF;
 
 	return 0;
 }
@@ -1462,11 +1465,10 @@ int __fault_injection_module_cpu_regs(void)
  * the results are computed and a new simulation is started.
  *  
  */
-int fault_injection_module_check_and_trigger(void)
+int fault_injection_module_check_and_trigger(uint32_t *regs)
 {
 	int ret = -1;
 	int64_t timeTick = cpu_get_ticks();
-	static int64_t tickTickOffset = 0;
 
 	// We're positioning checkpoints throught the code to inject faults
 	// in a specific time tick. I think this isn't a good idea due to the
@@ -1492,10 +1494,9 @@ int fault_injection_module_check_and_trigger(void)
 			return ret;
 
 	// Simulation total time reached
-	if (timeTick >= (pFm->simultotalTime + tickTickOffset)) {
-		syslog(0, "[FISBE:%lu] benchmark time ended", timeTick);
+	if (timeTick >= (pFm->simultotalTime)) {
+		syslog(0, "[FISBE] benchmark time ended %ld", timeTick);
 		if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT) {
-			print_fault_entry();
 			ret = __fault_injection_module_statistics();
 			pFm->idx++;
 		}
@@ -1505,10 +1506,11 @@ int fault_injection_module_check_and_trigger(void)
 		// Prepare the system for a new simulation
 		if (pFm->idx == pFm->stimuliTotal)
 			__fault_injector_module_export_results();
-	syslog(0, "%s@%d", __func__, __LINE__);	
-//		cpu_reset_ticks();
-		tickTickOffset = timeTick;
+		else
+				print_fault_entry();
+
 		qmp_system_reset(NULL);
+		cpu_reset_ticks();
 		return 0;
 	}
 
@@ -1544,9 +1546,33 @@ int fault_injection_module_check_and_trigger(void)
 	//	break;
 
 	case FAULT_INJECTION_MODULE_CPU_REGS:
-		ret = __fault_injection_module_cpu_regs();
+		ret = __fault_injection_module_cpu_regs(regs);
 		break;
 	}
+
+	return ret;
+}
+
+int fault_injection_module_exception_handler(int exception_index, int error_code)
+{
+	int ret = -1;
+
+	syslog(0, "Entry ID=%d EXCEPTION=%d ERROR_CODE=%d", pFm->idx, exception_index, error_code);
+
+	if (pFm->mode == FAULT_INJECTION_MODULE_WITH_FAULT) {
+		ret = __fault_injection_module_statistics();
+			pFm->idx++;
+	}
+
+	// Prepare the system for a new simulation
+	if (pFm->idx == pFm->stimuliTotal)
+			__fault_injector_module_export_results();
+	else
+			print_fault_entry();
+
+	qmp_system_reset(NULL);
+	cpu_reset_ticks();
+
 
 	return ret;
 }

@@ -548,7 +548,7 @@ typedef uint32_t FeatureWordArray[FEATURE_WORDS];
 
 #define CPUID_MWAIT_IBE     (1 << 1) /* Interrupts can exit capability */
 #define CPUID_MWAIT_EMX     (1 << 0) /* enumeration supported */
-
+// execption codes
 #define EXCP00_DIVZ	0
 #define EXCP01_DB	1
 #define EXCP02_NMI	2
